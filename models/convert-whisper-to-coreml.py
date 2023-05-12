@@ -20,7 +20,7 @@ def linear_to_conv2d_map(state_dict, prefix, local_metadata, strict,
     """
     for k in state_dict:
         is_attention = all(substr in k for substr in ['attn', '.weight'])
-        is_mlp = any([k.endswith(s) for s in ['mlp.0.weight', 'mlp.2.weight']])
+        is_mlp = any(k.endswith(s) for s in ['mlp.0.weight', 'mlp.2.weight'])
 
         if (is_attention or is_mlp) and len(state_dict[k].shape) == 2:
             state_dict[k] = state_dict[k][:, :, None, None]
@@ -29,7 +29,9 @@ def linear_to_conv2d_map(state_dict, prefix, local_metadata, strict,
 def correct_for_bias_scale_order_inversion(state_dict, prefix, local_metadata,
                                            strict, missing_keys,
                                            unexpected_keys, error_msgs):
-    state_dict[prefix + 'bias'] = state_dict[prefix + 'bias'] / state_dict[prefix + 'weight']
+    state_dict[f'{prefix}bias'] = (
+        state_dict[f'{prefix}bias'] / state_dict[f'{prefix}weight']
+    )
     return state_dict
 
 class LayerNormANE(LayerNormANEBase):
@@ -200,14 +202,13 @@ class TextDecoderANE(TextDecoder):
         if self.token_embedding.weight.shape[0] == 51865:
             # split in 11 chunks - 4715 each
             splits = self.token_embedding.weight.split(self.token_embedding.weight.shape[0]//11, dim=0)
-            logits = torch.cat([torch.einsum('bid,jd->bij', x, split) for split in splits]).view(*x.shape[:2], -1)
         else:
             # split in 12 chunks - 4322 each
             assert(self.token_embedding.weight.shape[0] == 51864)
             splits = self.token_embedding.weight.split(self.token_embedding.weight.shape[0]//12, dim=0)
-            logits = torch.cat([torch.einsum('bid,jd->bij', x, split) for split in splits]).view(*x.shape[:2], -1)
-
-        return logits
+        return torch.cat(
+            [torch.einsum('bid,jd->bij', x, split) for split in splits]
+        ).view(*x.shape[:2], -1)
 
 class WhisperANE(Whisper):
     def __init__(self, dims: ModelDimensions):
